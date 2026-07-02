@@ -1,0 +1,8 @@
+build_out/
+kernel/
+AclNNInvocation/build/
+AclNNInvocation/output/
+__pycache__/
+*.py[cod]
+.DS_Store
+._*
