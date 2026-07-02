@@ -2,8 +2,10 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
 #include <limits>
+#include <string>
 #include <vector>
 
 #include "acl/acl.h"
@@ -60,13 +62,13 @@ void FillInput(std::vector<float> &real, std::vector<float> &imag)
 
 void Reference(const std::vector<float> &input, std::vector<float> &output, int64_t batch)
 {
-    const int64_t lastDim = batch * INNER;
+    const int64_t lastDim = INNER * batch;
     for (int64_t batchIdx = 0; batchIdx < batch; ++batchIdx) {
         for (int64_t row = 0; row < ROWS; ++row) {
             for (int64_t inner = 0; inner < INNER; ++inner) {
                 for (int64_t col = 0; col < COLS; ++col) {
                     const int64_t inputOffset = ((batchIdx * ROWS + row) * INNER + inner) * COLS + col;
-                    const int64_t outputOffset = (row * COLS + col) * lastDim + batchIdx * INNER + inner;
+                    const int64_t outputOffset = (row * COLS + col) * lastDim + inner * batch + batchIdx;
                     output[outputOffset] = input[inputOffset];
                 }
             }
@@ -101,6 +103,21 @@ bool CopyToHost(std::vector<float> &dst, const void *src, size_t size)
 {
     return CheckAcl(aclrtMemcpy(dst.data(), size, src, size, ACL_MEMCPY_DEVICE_TO_HOST), "copy output");
 }
+
+bool WriteBin(const std::string &path, const std::vector<float> &data)
+{
+    std::ofstream ofs(path.c_str(), std::ios::binary);
+    if (!ofs) {
+        std::cerr << "open " << path << " failed" << std::endl;
+        return false;
+    }
+    ofs.write(reinterpret_cast<const char *>(data.data()), static_cast<std::streamsize>(data.size() * sizeof(float)));
+    if (!ofs) {
+        std::cerr << "write " << path << " failed" << std::endl;
+        return false;
+    }
+    return true;
+}
 } // namespace
 
 int main(int argc, char **argv)
@@ -110,7 +127,7 @@ int main(int argc, char **argv)
     const int64_t warmup = ParsePositiveArg(argc, argv, 3, 10);
     const int64_t repeats = ParsePositiveArg(argc, argv, 4, 100);
     const int64_t inputElems = batch * ROWS * INNER * COLS;
-    const int64_t outputElems = ROWS * COLS * batch * INNER;
+    const int64_t outputElems = ROWS * COLS * INNER * batch;
     const size_t inputBytes = static_cast<size_t>(inputElems) * sizeof(float);
     const size_t outputBytes = static_cast<size_t>(outputElems) * sizeof(float);
 
@@ -123,6 +140,10 @@ int main(int argc, char **argv)
     FillInput(inputR, inputI);
     Reference(inputR, expectR, batch);
     Reference(inputI, expectI, batch);
+    if (!WriteBin("../input/input_ar.bin", inputR) ||
+        !WriteBin("../input/input_ai.bin", inputI)) {
+        return 1;
+    }
 
     void *devAR = nullptr;
     void *devAI = nullptr;
@@ -148,7 +169,7 @@ int main(int argc, char **argv)
     }
 
     const std::vector<int64_t> inputShape{batch * ROWS, INNER, COLS};
-    const std::vector<int64_t> outputShape{ROWS, COLS, batch * INNER};
+    const std::vector<int64_t> outputShape{ROWS, COLS, INNER * batch};
     aRTensor = CreateTensor(inputShape, devAR);
     aITensor = CreateTensor(inputShape, devAI);
     cRTensor = CreateTensor(outputShape, devCR);
@@ -224,6 +245,10 @@ int main(int argc, char **argv)
     if (!CheckAcl(aclrtSynchronizeStream(stream), "aclrtSynchronizeStream") ||
         !CopyToHost(outputR, devCR, outputBytes) ||
         !CopyToHost(outputI, devCI, outputBytes)) {
+        return 1;
+    }
+    if (!WriteBin("../output/output_cr.bin", outputR) ||
+        !WriteBin("../output/output_ci.bin", outputI)) {
         return 1;
     }
 

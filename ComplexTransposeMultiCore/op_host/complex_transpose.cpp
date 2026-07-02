@@ -89,7 +89,7 @@ bool CheckOutputShape(const gert::Shape &shape, int64_t batch)
     return shape.GetDimNum() == 3 &&
            CheckSameOrDynamicDim(shape.GetDim(0), ROWS) &&
            CheckSameOrDynamicDim(shape.GetDim(1), COLS) &&
-           CheckSameOrDynamicDim(shape.GetDim(2), batch * INNER);
+           CheckSameOrDynamicDim(shape.GetDim(2), INNER * batch);
 }
 
 static ge::graphStatus InferShape(gert::InferShapeContext *context)
@@ -116,7 +116,7 @@ static ge::graphStatus InferShape(gert::InferShapeContext *context)
         return ge::GRAPH_FAILED;
     }
 
-    const int64_t lastDim = batch < 0 ? -1 : batch * INNER;
+    const int64_t lastDim = batch < 0 ? -1 : INNER * batch;
     *crShape = gert::Shape({ROWS, COLS, lastDim});
     *ciShape = gert::Shape({ROWS, COLS, lastDim});
     return ge::GRAPH_SUCCESS;
@@ -173,7 +173,7 @@ static ge::graphStatus TilingFunc(gert::TilingContext *context)
     }
     if (!CheckOutputShape(crShape, batch) || !CheckOutputShape(ciShape, batch)) {
         CT_LOG_FAIL(stage, "invalid output shape, expect [%d,%d,%ld]",
-                    ROWS, COLS, static_cast<long>(batch * INNER));
+                    ROWS, COLS, static_cast<long>(INNER * batch));
         LogShape(stage, "c_r", crShape);
         LogShape(stage, "c_i", ciShape);
         return ge::GRAPH_FAILED;
@@ -188,7 +188,7 @@ static ge::graphStatus TilingFunc(gert::TilingContext *context)
     ComplexTransposeTilingData tiling;
     tiling.set_batch(static_cast<uint32_t>(batch));
     tiling.set_totalPlanes(static_cast<uint32_t>(batch * ROWS));
-    tiling.set_lastDim(static_cast<uint32_t>(batch * INNER));
+    tiling.set_lastDim(static_cast<uint32_t>(INNER * batch));
 
     const uint32_t totalPlanes = static_cast<uint32_t>(batch * ROWS);
     const uint32_t blockDim = totalPlanes < DEFAULT_BLOCK_DIM ? totalPlanes : DEFAULT_BLOCK_DIM;

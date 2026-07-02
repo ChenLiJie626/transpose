@@ -17,8 +17,8 @@ Outputs:
 Mapping:
 
 ```text
-c_r[row, k, batch_idx * 8 + inner] = a_r[batch_idx * 136 + row, inner, k]
-c_i[row, k, batch_idx * 8 + inner] = a_i[batch_idx * 136 + row, inner, k]
+c_r[row, k, inner * batch + batch_idx] = a_r[batch_idx * 136 + row, inner, k]
+c_i[row, k, inner * batch + batch_idx] = a_i[batch_idx * 136 + row, inner, k]
 ```
 
 ## Build

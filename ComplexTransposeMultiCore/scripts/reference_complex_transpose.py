@@ -10,8 +10,8 @@ def complex_transpose(a_r: np.ndarray, a_i: np.ndarray):
         raise ValueError(f"expected input shape [batch * 136, 8, 256], got {a_r.shape}")
 
     batch = a_r.shape[0] // 136
-    c_r = a_r.reshape(batch, 136, 8, 256).transpose(1, 3, 0, 2).reshape(136, 256, batch * 8)
-    c_i = a_i.reshape(batch, 136, 8, 256).transpose(1, 3, 0, 2).reshape(136, 256, batch * 8)
+    c_r = a_r.reshape(batch, 136, 8, 256).transpose(1, 3, 2, 0).reshape(136, 256, 8 * batch)
+    c_i = a_i.reshape(batch, 136, 8, 256).transpose(1, 3, 2, 0).reshape(136, 256, 8 * batch)
     return c_r, c_i
 
 
