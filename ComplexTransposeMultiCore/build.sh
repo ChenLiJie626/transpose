@@ -15,6 +15,8 @@ else
 fi
 echo "using ASCEND_HOME_PATH: $ASCEND_HOME_PATH"
 script_path=$(realpath $(dirname $0))
+ASCEND_PYTHON_EXECUTABLE=${ASCEND_PYTHON_EXECUTABLE:-python3}
+CMAKE_PYTHON_OPT="-DASCEND_PYTHON_EXECUTABLE=${ASCEND_PYTHON_EXECUTABLE}"
 
 
 mkdir -p build_out
@@ -54,17 +56,17 @@ then
   target=package
   if [ "$1"x != ""x ]; then target=$1; fi
   if [ "$cmake_version" \< "3.19.0" ] ; then
-    cmake .. $opts -DENABLE_CROSS_COMPILE=0 -DASCEND_CANN_PACKAGE_PATH=${ASCEND_HOME_PATH}
+    cmake .. $opts -DENABLE_CROSS_COMPILE=0 -DASCEND_CANN_PACKAGE_PATH=${ASCEND_HOME_PATH} ${CMAKE_PYTHON_OPT}
   else
-    cmake .. --preset=default -DENABLE_CROSS_COMPILE=0 -DASCEND_CANN_PACKAGE_PATH=${ASCEND_HOME_PATH}
+    cmake .. --preset=default -DENABLE_CROSS_COMPILE=0 -DASCEND_CANN_PACKAGE_PATH=${ASCEND_HOME_PATH} ${CMAKE_PYTHON_OPT}
   fi
   cmake_run_package $target
   cp -r kernel ../
   rm -rf *
   if [ "$cmake_version" \< "3.19.0" ] ; then
-    cmake .. $opts -DASCEND_CANN_PACKAGE_PATH=${ASCEND_HOME_PATH}
+    cmake .. $opts -DASCEND_CANN_PACKAGE_PATH=${ASCEND_HOME_PATH} ${CMAKE_PYTHON_OPT}
   else
-    cmake .. --preset=default -DASCEND_CANN_PACKAGE_PATH=${ASCEND_HOME_PATH}
+    cmake .. --preset=default -DASCEND_CANN_PACKAGE_PATH=${ASCEND_HOME_PATH} ${CMAKE_PYTHON_OPT}
   fi
 
   cmake --build . --target $target -j16
@@ -82,9 +84,9 @@ else
   target=package
   if [ "$1"x != ""x ]; then target=$1; fi
   if [ "$cmake_version" \< "3.19.0" ] ; then
-    cmake .. $opts -DASCEND_CANN_PACKAGE_PATH=${ASCEND_HOME_PATH}
+    cmake .. $opts -DASCEND_CANN_PACKAGE_PATH=${ASCEND_HOME_PATH} ${CMAKE_PYTHON_OPT}
   else
-      cmake .. --preset=default -DASCEND_CANN_PACKAGE_PATH=${ASCEND_HOME_PATH}
+      cmake .. --preset=default -DASCEND_CANN_PACKAGE_PATH=${ASCEND_HOME_PATH} ${CMAKE_PYTHON_OPT}
   fi
   cmake_run_package $target
 fi
