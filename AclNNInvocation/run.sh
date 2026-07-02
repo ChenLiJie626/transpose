@@ -10,7 +10,7 @@ export DDK_PATH=${DDK_PATH:-/usr/local/Ascend/ascend-toolkit/latest}
 rm -rf "${BUILD_DIR}"
 mkdir -p "${BUILD_DIR}"
 cd "${BUILD_DIR}"
-cmake ..
+cmake ../src
 cmake --build . -j
 
-"${SCRIPT_DIR}/output/execute_complex_transpose" "${1:-1}" "${2:-0}"
+"${SCRIPT_DIR}/output/execute_complex_transpose" "${1:-1}" "${2:-0}" "${3:-10}" "${4:-100}"

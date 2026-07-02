@@ -1,4 +1,5 @@
 #include <cmath>
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
@@ -106,6 +107,8 @@ int main(int argc, char **argv)
 {
     const int64_t batch = ParsePositiveArg(argc, argv, 1, 1);
     const int deviceId = ParseDeviceArg(argc, argv, 2, 0);
+    const int64_t warmup = ParsePositiveArg(argc, argv, 3, 10);
+    const int64_t repeats = ParsePositiveArg(argc, argv, 4, 100);
     const int64_t inputElems = batch * ROWS * INNER * COLS;
     const int64_t outputElems = ROWS * COLS * batch * INNER;
     const size_t inputBytes = static_cast<size_t>(inputElems) * sizeof(float);
@@ -169,11 +172,55 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    ret = aclnnComplexTranspose(workspace, workspaceSize, executor, stream);
-    if (ret != ACL_SUCCESS) {
-        std::cerr << "aclnnComplexTranspose failed, ret=" << static_cast<int>(ret) << std::endl;
+    auto launchOp = [&]() -> bool {
+        const aclnnStatus launchRet = aclnnComplexTranspose(workspace, workspaceSize, executor, stream);
+        if (launchRet != ACL_SUCCESS) {
+            std::cerr << "aclnnComplexTranspose failed, ret=" << static_cast<int>(launchRet) << std::endl;
+            return false;
+        }
+        return true;
+    };
+
+    for (int64_t i = 0; i < warmup; ++i) {
+        if (!launchOp()) {
+            return 1;
+        }
+    }
+    if (!CheckAcl(aclrtSynchronizeStream(stream), "warmup synchronize")) {
         return 1;
     }
+
+    aclrtEvent startEvent = nullptr;
+    aclrtEvent endEvent = nullptr;
+    if (!CheckAcl(aclrtCreateEvent(&startEvent), "create start event") ||
+        !CheckAcl(aclrtCreateEvent(&endEvent), "create end event")) {
+        (void)aclrtDestroyEvent(startEvent);
+        (void)aclrtDestroyEvent(endEvent);
+        return 1;
+    }
+
+    std::vector<float> elapsedMs;
+    elapsedMs.reserve(static_cast<size_t>(repeats));
+    for (int64_t i = 0; i < repeats; ++i) {
+        if (!CheckAcl(aclrtRecordEvent(startEvent, stream), "record start event") ||
+            !launchOp() ||
+            !CheckAcl(aclrtRecordEvent(endEvent, stream), "record end event") ||
+            !CheckAcl(aclrtSynchronizeStream(stream), "timed synchronize")) {
+            (void)aclrtDestroyEvent(startEvent);
+            (void)aclrtDestroyEvent(endEvent);
+            return 1;
+        }
+        float oneElapsedMs = 0.0f;
+        if (!CheckAcl(aclrtEventElapsedTime(&oneElapsedMs, startEvent, endEvent), "event elapsed time")) {
+            (void)aclrtDestroyEvent(startEvent);
+            (void)aclrtDestroyEvent(endEvent);
+            return 1;
+        }
+        elapsedMs.push_back(oneElapsedMs);
+    }
+    (void)aclrtDestroyEvent(startEvent);
+    (void)aclrtDestroyEvent(endEvent);
+
     if (!CheckAcl(aclrtSynchronizeStream(stream), "aclrtSynchronizeStream") ||
         !CopyToHost(outputR, devCR, outputBytes) ||
         !CopyToHost(outputI, devCI, outputBytes)) {
@@ -182,8 +229,20 @@ int main(int argc, char **argv)
 
     const float diffR = MaxAbsDiff(outputR, expectR);
     const float diffI = MaxAbsDiff(outputI, expectI);
+    double totalMs = 0.0;
+    for (float value : elapsedMs) {
+        totalMs += value;
+    }
+    const float minMs = *std::min_element(elapsedMs.begin(), elapsedMs.end());
+    const float maxMs = *std::max_element(elapsedMs.begin(), elapsedMs.end());
+    const double avgMs = totalMs / static_cast<double>(elapsedMs.size());
     std::cout << "batch=" << batch << " device=" << deviceId
               << " workspace=" << workspaceSize
+              << " warmup=" << warmup
+              << " repeats=" << repeats
+              << " avg_ms=" << avgMs
+              << " min_ms=" << minMs
+              << " max_ms=" << maxMs
               << " max_diff_r=" << diffR
               << " max_diff_i=" << diffI << std::endl;
 

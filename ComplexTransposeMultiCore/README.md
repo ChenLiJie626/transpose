@@ -1,6 +1,6 @@
-# ComplexTranspose
+# ComplexTransposeMultiCore
 
-Ascend C custom operator for transposing split complex matrices.
+Ascend C custom operator project for `ComplexTranspose`.
 
 ## Shape
 
@@ -24,13 +24,5 @@ c_i[row, k, batch_idx * 8 + inner] = a_i[batch_idx * 136 + row, inner, k]
 ## Build
 
 ```bash
-cd ComplexTransposeMultiCore
 ./build.sh
-```
-
-## AclNN Invocation
-
-```bash
-cd AclNNInvocation
-./run.sh 10 0 10 100
 ```

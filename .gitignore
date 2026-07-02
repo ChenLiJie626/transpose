@@ -1,7 +1,8 @@
 build_out/
 kernel/
 AclNNInvocation/build/
-AclNNInvocation/output/
+AclNNInvocation/output/*
+!AclNNInvocation/output/.keep
 __pycache__/
 *.py[cod]
 .DS_Store

@@ -4,7 +4,7 @@ project(acl_execute_complex_transpose)
 
 add_compile_options(-std=c++11 -O2)
 
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/output")
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "../output")
 
 set(INC_PATH $ENV{DDK_PATH})
 if (NOT DEFINED ENV{DDK_PATH})
@@ -22,6 +22,7 @@ if (NOT DEFINED ENV{NPU_HOST_LIB})
 endif()
 
 include_directories(
+    ../inc
     ${INC_PATH}/include
     ${CUST_PKG_PATH}/include
 )
