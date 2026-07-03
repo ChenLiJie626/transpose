@@ -1,15 +1,4 @@
 #include "kernel_operator.h"
-#if defined(__has_include)
-#if __has_include("adv_api/index/arithprogression.h")
-#include "adv_api/index/arithprogression.h"
-#elif __has_include("adv_api/arithprogression/arithprogression.h")
-#include "adv_api/arithprogression/arithprogression.h"
-#else
-#error "AscendC arithprogression header not found"
-#endif
-#else
-#include "adv_api/arithprogression/arithprogression.h"
-#endif
 
 using namespace AscendC;
 
@@ -23,8 +12,7 @@ constexpr uint32_t BATCH_LANES = 8;
 constexpr uint32_t CHUNK_ELEMS = BATCH_LANES * COLS;
 constexpr uint32_t CHUNK_BYTES = CHUNK_ELEMS * sizeof(float);
 constexpr uint32_t OFFSET_BLOCK_ELEMS = 32;
-constexpr uint32_t OFFSET_BLOCK_COLS = OFFSET_BLOCK_ELEMS / BATCH_LANES;
-constexpr uint32_t OFFSET_WORK_TENSORS = 2;
+constexpr uint32_t OFFSET_WORK_TENSORS = 1;
 constexpr uint32_t OFFSET_WORK_BYTES = OFFSET_WORK_TENSORS * CHUNK_ELEMS * sizeof(uint32_t);
 
 __aicore__ inline uint64_t GetAivBlockNum()
@@ -34,23 +22,16 @@ __aicore__ inline uint64_t GetAivBlockNum()
 
 __aicore__ inline void InitGatherOffsets(TBuf<> &offsetBuf)
 {
-    LocalTensor<int32_t> work = offsetBuf.Get<int32_t>();
-    LocalTensor<int32_t> offset = work;
-    LocalTensor<int32_t> lane = work[CHUNK_ELEMS];
-
-    Arange(lane, static_cast<int32_t>(0), static_cast<int32_t>(1), static_cast<int32_t>(BATCH_LANES));
-    Muls(lane, lane, static_cast<int32_t>(COLS), static_cast<int32_t>(BATCH_LANES));
-    PipeBarrier<PIPE_V>();
-
-    for (uint32_t colBase = 0; colBase < COLS; colBase += OFFSET_BLOCK_COLS) {
-        const uint32_t base = colBase * BATCH_LANES;
-        for (uint32_t col = 0; col < OFFSET_BLOCK_COLS; ++col) {
-            LocalTensor<int32_t> offsetPart = offset[base + col * BATCH_LANES];
-            Adds(offsetPart, lane, static_cast<int32_t>(colBase + col), static_cast<int32_t>(BATCH_LANES));
-            Muls(offsetPart, offsetPart, static_cast<int32_t>(sizeof(float)), static_cast<int32_t>(BATCH_LANES));
+    LocalTensor<uint32_t> offset = offsetBuf.Get<uint32_t>();
+    __ubuf__ uint32_t *offsetPtr = (__ubuf__ uint32_t *)offset.GetPhyAddr();
+    for (uint32_t col = 0; col < COLS; ++col) {
+        const uint32_t dstBase = col * BATCH_LANES;
+        const uint32_t colOffset = col * sizeof(float);
+        for (uint32_t lane = 0; lane < BATCH_LANES; ++lane) {
+            offsetPtr[dstBase + lane] = colOffset + lane * COLS * sizeof(float);
         }
     }
-    PipeBarrier<PIPE_V>();
+    PipeBarrier<PIPE_ALL>();
 }
 
 __aicore__ inline void DecodeTask(uint32_t task,
