@@ -1,5 +1,15 @@
 #include "kernel_operator.h"
+#if defined(__has_include)
+#if __has_include("adv_api/index/arithprogression.h")
 #include "adv_api/index/arithprogression.h"
+#elif __has_include("adv_api/arithprogression/arithprogression.h")
+#include "adv_api/arithprogression/arithprogression.h"
+#else
+#error "AscendC arithprogression header not found"
+#endif
+#else
+#include "adv_api/arithprogression/arithprogression.h"
+#endif
 
 using namespace AscendC;
 
