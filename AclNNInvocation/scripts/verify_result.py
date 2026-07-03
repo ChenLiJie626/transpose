@@ -11,7 +11,7 @@ COLS = 256
 
 
 def reference(x: np.ndarray, batch: int) -> np.ndarray:
-    return x.reshape(batch, ROWS, INNER, COLS).transpose(1, 3, 2, 0).reshape(ROWS, COLS, INNER * batch)
+    return x.reshape(batch, ROWS, INNER, COLS).transpose(1, 3, 0, 2).reshape(ROWS, COLS, batch * INNER)
 
 
 def main():

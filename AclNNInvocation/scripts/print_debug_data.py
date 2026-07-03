@@ -38,10 +38,10 @@ def print_linear(name, array, count):
 def print_mapping(a_r, a_i, c_r, c_i, coords):
     batch = a_r.shape[0] // ROWS
     print("coordinate mapping checks:")
-    print("  c[row, col, inner * batch + batch_idx] == a[batch_idx * 136 + row, inner, col]")
+    print("  c[row, col, batch_idx * 8 + inner] == a[batch_idx * 136 + row, inner, col]")
     for batch_idx, row, inner, col in coords:
         in_row = batch_idx * ROWS + row
-        out_last = inner * batch + batch_idx
+        out_last = batch_idx * INNER + inner
         ar = a_r[in_row, inner, col]
         ai = a_i[in_row, inner, col]
         cr = c_r[row, col, out_last]
@@ -86,13 +86,13 @@ def main():
         print(fmt(a_r[136, :, 0:8]))
         print()
 
-    print("c_r[0, 0, :]  # row 0, col 0, all inner*batch lanes")
+    print("c_r[0, 0, :]  # row 0, col 0, all batch*inner lanes")
     print(fmt(c_r[0, 0, :]))
     print()
-    print("c_i[0, 0, :]  # row 0, col 0, all inner*batch lanes")
+    print("c_i[0, 0, :]  # row 0, col 0, all batch*inner lanes")
     print(fmt(c_i[0, 0, :]))
     print()
-    print("c_r[0, 0:8, 0:8]  # row 0, first 8 cols, inner 0 across first batches")
+    print("c_r[0, 0:8, 0:8]  # row 0, first 8 cols, batch 0 across all inner lanes")
     print(fmt(c_r[0, 0:8, 0:8]))
     print()
 
@@ -107,8 +107,8 @@ def main():
     ]
     print_mapping(a_r, a_i, c_r, c_i, coords)
 
-    ref_r = a_r.reshape(args.batch, ROWS, INNER, COLS).transpose(1, 3, 2, 0).reshape(output_shape)
-    ref_i = a_i.reshape(args.batch, ROWS, INNER, COLS).transpose(1, 3, 2, 0).reshape(output_shape)
+    ref_r = a_r.reshape(args.batch, ROWS, INNER, COLS).transpose(1, 3, 0, 2).reshape(output_shape)
+    ref_i = a_i.reshape(args.batch, ROWS, INNER, COLS).transpose(1, 3, 0, 2).reshape(output_shape)
     print(f"max_diff_r={np.max(np.abs(c_r - ref_r))}")
     print(f"max_diff_i={np.max(np.abs(c_i - ref_i))}")
 

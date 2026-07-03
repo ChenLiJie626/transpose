@@ -68,7 +68,7 @@ void Reference(const std::vector<float> &input, std::vector<float> &output, int6
             for (int64_t inner = 0; inner < INNER; ++inner) {
                 for (int64_t col = 0; col < COLS; ++col) {
                     const int64_t inputOffset = ((batchIdx * ROWS + row) * INNER + inner) * COLS + col;
-                    const int64_t outputOffset = (row * COLS + col) * lastDim + inner * batch + batchIdx;
+                    const int64_t outputOffset = (row * COLS + col) * lastDim + batchIdx * INNER + inner;
                     output[outputOffset] = input[inputOffset];
                 }
             }

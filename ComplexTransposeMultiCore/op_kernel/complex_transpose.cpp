@@ -8,8 +8,8 @@ constexpr uint32_t INNER = 8;
 constexpr uint32_t COLS = 256;
 constexpr uint32_t PLANE_ELEMS = INNER * COLS;
 constexpr uint32_t BUFFER_NUM = 2;
-constexpr uint32_t BATCH_LANES = 8;
-constexpr uint32_t CHUNK_ELEMS = BATCH_LANES * COLS;
+constexpr uint32_t INNER_LANES = INNER;
+constexpr uint32_t CHUNK_ELEMS = INNER_LANES * COLS;
 constexpr uint32_t CHUNK_BYTES = CHUNK_ELEMS * sizeof(float);
 constexpr uint32_t OFFSET_BLOCK_ELEMS = 32;
 constexpr uint32_t OFFSET_WORK_TENSORS = 1;
@@ -25,22 +25,13 @@ __aicore__ inline void InitGatherOffsets(TBuf<> &offsetBuf)
     LocalTensor<uint32_t> offset = offsetBuf.Get<uint32_t>();
     __ubuf__ uint32_t *offsetPtr = (__ubuf__ uint32_t *)offset.GetPhyAddr();
     for (uint32_t col = 0; col < COLS; ++col) {
-        const uint32_t dstBase = col * BATCH_LANES;
+        const uint32_t dstBase = col * INNER_LANES;
         const uint32_t colOffset = col * sizeof(float);
-        for (uint32_t lane = 0; lane < BATCH_LANES; ++lane) {
+        for (uint32_t lane = 0; lane < INNER_LANES; ++lane) {
             offsetPtr[dstBase + lane] = colOffset + lane * COLS * sizeof(float);
         }
     }
     PipeBarrier<PIPE_ALL>();
-}
-
-__aicore__ inline void DecodeTask(uint32_t task,
-                                  uint32_t batchChunks,
-                                  uint32_t &inner,
-                                  uint32_t &batchStart)
-{
-    inner = task / batchChunks;
-    batchStart = (task - inner * batchChunks) * BATCH_LANES;
 }
 
 __aicore__ inline uint64_t GetInputOffset(uint32_t row,
@@ -52,25 +43,21 @@ __aicore__ inline uint64_t GetInputOffset(uint32_t row,
 }
 
 __aicore__ inline uint64_t GetOutputOffset(uint32_t row,
-                                           uint32_t inner,
                                            uint32_t batchIdx,
-                                           uint32_t batch,
                                            uint32_t lastDim)
 {
     return static_cast<uint64_t>(row) * COLS * lastDim +
-           static_cast<uint64_t>(inner) * batch + batchIdx;
+           static_cast<uint64_t>(batchIdx) * INNER;
 }
 
 __aicore__ inline void CopyInOne(GlobalTensor<float> &src,
                                  TQue<QuePosition::VECIN, BUFFER_NUM> &inQueue,
                                  uint32_t row,
-                                 uint32_t inner,
-                                 uint32_t batchStart,
-                                 uint32_t batchLen)
+                                 uint32_t batchIdx)
 {
     LocalTensor<float> inLocal = inQueue.AllocTensor<float>();
-    for (uint32_t lane = 0; lane < batchLen; ++lane) {
-        DataCopy(inLocal[lane * COLS], src[GetInputOffset(row, inner, batchStart + lane)], COLS);
+    for (uint32_t inner = 0; inner < INNER; ++inner) {
+        DataCopy(inLocal[inner * COLS], src[GetInputOffset(row, inner, batchIdx)], COLS);
     }
     inQueue.EnQue(inLocal);
 }
@@ -80,16 +67,10 @@ __aicore__ inline void CopyInPair(GlobalTensor<float> &arGm,
                                   TQue<QuePosition::VECIN, BUFFER_NUM> &rInQueue,
                                   TQue<QuePosition::VECIN, BUFFER_NUM> &iInQueue,
                                   uint32_t row,
-                                  uint32_t task,
-                                  uint32_t batch,
-                                  uint32_t batchChunks)
+                                  uint32_t batchIdx)
 {
-    uint32_t inner = 0;
-    uint32_t batchStart = 0;
-    DecodeTask(task, batchChunks, inner, batchStart);
-    const uint32_t batchLen = (batchStart + BATCH_LANES <= batch) ? BATCH_LANES : (batch - batchStart);
-    CopyInOne(arGm, rInQueue, row, inner, batchStart, batchLen);
-    CopyInOne(aiGm, iInQueue, row, inner, batchStart, batchLen);
+    CopyInOne(arGm, rInQueue, row, batchIdx);
+    CopyInOne(aiGm, iInQueue, row, batchIdx);
 }
 
 __aicore__ inline void MoveOne(TQue<QuePosition::VECIN, BUFFER_NUM> &inQueue,
@@ -121,19 +102,16 @@ __aicore__ inline void MovePair(TQue<QuePosition::VECIN, BUFFER_NUM> &rInQueue,
 __aicore__ inline void CopyOutOne(GlobalTensor<float> &dst,
                                   TQue<QuePosition::VECOUT, BUFFER_NUM> &outQueue,
                                   uint32_t row,
-                                  uint32_t inner,
-                                  uint32_t batchStart,
-                                  uint32_t batchLen,
-                                  uint32_t batch,
+                                  uint32_t batchIdx,
                                   uint32_t lastDim)
 {
     LocalTensor<float> outLocal = outQueue.DeQue<float>();
     DataCopyExtParams copyParams{static_cast<uint16_t>(COLS),
-                                 static_cast<uint32_t>(batchLen * sizeof(float)),
+                                 static_cast<uint32_t>(INNER * sizeof(float)),
                                  0,
-                                 static_cast<uint32_t>((lastDim - batchLen) * sizeof(float)),
+                                 static_cast<uint32_t>((lastDim - INNER) * sizeof(float)),
                                  0};
-    DataCopyPad(dst[GetOutputOffset(row, inner, batchStart, batch, lastDim)], outLocal, copyParams);
+    DataCopyPad(dst[GetOutputOffset(row, batchIdx, lastDim)], outLocal, copyParams);
     outQueue.FreeTensor(outLocal);
 }
 
@@ -142,17 +120,11 @@ __aicore__ inline void CopyOutPair(GlobalTensor<float> &crGm,
                                    TQue<QuePosition::VECOUT, BUFFER_NUM> &rOutQueue,
                                    TQue<QuePosition::VECOUT, BUFFER_NUM> &iOutQueue,
                                    uint32_t row,
-                                   uint32_t task,
-                                   uint32_t batch,
-                                   uint32_t batchChunks,
+                                   uint32_t batchIdx,
                                    uint32_t lastDim)
 {
-    uint32_t inner = 0;
-    uint32_t batchStart = 0;
-    DecodeTask(task, batchChunks, inner, batchStart);
-    const uint32_t batchLen = (batchStart + BATCH_LANES <= batch) ? BATCH_LANES : (batch - batchStart);
-    CopyOutOne(crGm, rOutQueue, row, inner, batchStart, batchLen, batch, lastDim);
-    CopyOutOne(ciGm, iOutQueue, row, inner, batchStart, batchLen, batch, lastDim);
+    CopyOutOne(crGm, rOutQueue, row, batchIdx, lastDim);
+    CopyOutOne(ciGm, iOutQueue, row, batchIdx, lastDim);
 }
 
 __aicore__ inline void ProcessRow(GlobalTensor<float> &arGm,
@@ -168,12 +140,11 @@ __aicore__ inline void ProcessRow(GlobalTensor<float> &arGm,
                                   uint32_t batch,
                                   uint32_t lastDim)
 {
-    const uint32_t batchChunks = (batch + BATCH_LANES - 1) / BATCH_LANES;
-    const uint32_t totalTasks = INNER * batchChunks;
+    const uint32_t totalTasks = batch;
     LocalTensor<uint32_t> offsetLocal = offsetBuf.Get<uint32_t>();
     const uint32_t warmupTasks = (totalTasks < BUFFER_NUM) ? totalTasks : BUFFER_NUM;
     for (uint32_t task = 0; task < warmupTasks; ++task) {
-        CopyInPair(arGm, aiGm, rInQueue, iInQueue, row, task, batch, batchChunks);
+        CopyInPair(arGm, aiGm, rInQueue, iInQueue, row, task);
     }
 
     for (uint32_t task = 0; task < totalTasks; ++task) {
@@ -181,10 +152,10 @@ __aicore__ inline void ProcessRow(GlobalTensor<float> &arGm,
 
         const uint32_t nextTask = task + BUFFER_NUM;
         if (nextTask < totalTasks) {
-            CopyInPair(arGm, aiGm, rInQueue, iInQueue, row, nextTask, batch, batchChunks);
+            CopyInPair(arGm, aiGm, rInQueue, iInQueue, row, nextTask);
         }
 
-        CopyOutPair(crGm, ciGm, rOutQueue, iOutQueue, row, task, batch, batchChunks, lastDim);
+        CopyOutPair(crGm, ciGm, rOutQueue, iOutQueue, row, task, lastDim);
     }
 }
 } // namespace ComplexTransposeKernel
